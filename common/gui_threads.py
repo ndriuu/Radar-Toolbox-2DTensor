@@ -1,5 +1,5 @@
 # General Library Imports
-from collections import deque
+from collections import deque, Counter
 from queue import Queue
 from threading import Thread
 import numpy as np
@@ -49,7 +49,7 @@ TRACK_INDEX_NOISE = 255  # Point not associated, considered as noise
 class parseUartThread(QThread):
     fin = Signal(dict)
 
-    def __init__(self, uParser, window_size=30, stride=10,viewer=None):
+    def __init__(self, uParser, window_size=30, stride=3,viewer=None):
         QThread.__init__(self)
         self.parser = uParser
         self.pred_queue = deque(maxlen=5)  # Ambil 5 prediksi terakhir (bisa diubah)
@@ -58,8 +58,13 @@ class parseUartThread(QThread):
         self.predThread.daemon = True
         self.predThread.start()
         self.model = load_model("andrikun_fixed.h5", compile=False)
-        # self.model.summary()  # ⬅️ Panggil setelah model berhasil diload
         self.class_names = ["Berdiri", "Duduk", "Jalan", "Jatuh"]
+
+        # 🔥 Tambahkan ini untuk logika stabilisasi jatuh
+        self.last_label_name = None
+        self.last_jatuh_timestamp = None
+        self.doppler_change_threshold = 0.5  # Threshold mean doppler untuk "bergerak" lagi
+        self.jatuh_hold_time = 3  # Detik mempertahankan status jatuh
 
         # self.x, self.y, self.z = 10, 32, 32
         # self.x_min, self.x_max = -1.5, 1.5
@@ -121,7 +126,7 @@ class parseUartThread(QThread):
             self.guiWindow.updateHeatmapGUI(dr, dt, rt)
 
         # ✅ Kirim heatmap_rgb ke queue untuk diprediksi di thread lain
-        self.queue.put(heatmap_rgb)
+        self.queue.put((heatmap_rgb, df_subset["doppler"]))  # 🔥 Kirim heatmap dan doppler
             # self.guiWindow.updateVoxelGUI(voxel)
 
         # heatmap_rgb = self.generate_rgb_heatmap_tensor(df_subset)
@@ -272,23 +277,61 @@ class parseUartThread(QThread):
 
     def prediction_thread_func(self):
         while True:
-            heatmap_rgb = self.queue.get()
+            heatmap_rgb, doppler_vals = self.queue.get()  # 🔥 Terima heatmap dan doppler
             if heatmap_rgb is None:
                 break
 
+            # 🔥 Start timer
             input_tensor = np.expand_dims(heatmap_rgb, axis=0)
+            start_time = time.time()
             pred = self.model.predict(input_tensor, verbose=0)
+            end_time = time.time()
+            inference_time = end_time - start_time
+
+            # 🔥 Prediksi awal
             label_idx = np.argmax(pred)
-            confidence = np.max(pred)
-            label_name = self.class_names[label_idx]
+            self.pred_queue.append(label_idx)
 
-            print(f"📢 Prediksi Aktivitas: {label_name} (label={label_idx}, conf={confidence:.2f})")
+            # 🔥 Majority voting
+            counts = Counter(self.pred_queue)
+            majority_label_idx = counts.most_common(1)[0][0]
 
+            label_name = self.class_names[majority_label_idx]
+            confidence = pred[0][majority_label_idx]
+            # label_idx = np.argmax(pred)
+            # confidence = np.max(pred)
+            # label_idx, label_name, confidence = self.update_prediction(label_idx, confidence, doppler_vals)
+
+
+            # print(f"📢 Majority Voting Aktivitas: {label_name} (label={majority_label_idx}, conf={confidence:.2f}, infer={inference_time:.4f}s)")
+
+            # ✅ Update label di GUI
             if hasattr(self, 'guiWindow'):
                 self.guiWindow.predictionLabel.setText(
-                    f"Aktivitas: {label_name} ({confidence * 100:.1f}%)"
+                    f"Aktivitas: {label_name} ({confidence * 100:.1f}%) | {inference_time:.4f}s"
                 )
 
+    def update_prediction(self, label_idx, confidence, doppler_values):
+            if self.last_label_name == "Jatuh":
+                mean_doppler = np.mean(np.abs(doppler_values))
+                if mean_doppler > self.doppler_change_threshold:
+                    # Aktivitas baru valid, update
+                    self.last_label_idx = label_idx
+                    self.last_label_name = self.class_names[label_idx]
+                    self.last_confidence = confidence
+                else:
+                    # Tetap di 'jatuh'
+                    label_idx = self.last_label_idx
+                    label_name = self.last_label_name
+                    confidence = self.last_confidence
+            else:
+                # Bukan jatuh sebelumnya, update biasa
+                self.last_label_idx = label_idx
+                self.last_label_name = self.class_names[label_idx]
+                self.last_confidence = confidence
+
+            return self.last_label_idx, self.last_label_name, self.last_confidence
+    
     def stop(self):
         self.terminate()
 

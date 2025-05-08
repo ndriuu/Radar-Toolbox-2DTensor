@@ -148,7 +148,7 @@ class Window(QMainWindow):
         self.predictionLabel.setAlignment(Qt.AlignCenter)
         self.predictionLabel.setStyleSheet("""
             font-weight: bold;
-            font-size: 16px;
+            font-size: 30px;
             color: green;
         """)
         self.heatmapLayout.addWidget(self.predictionLabel)
