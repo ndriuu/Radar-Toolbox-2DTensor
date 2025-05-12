@@ -49,31 +49,28 @@ TRACK_INDEX_NOISE = 255  # Point not associated, considered as noise
 class parseUartThread(QThread):
     fin = Signal(dict)
 
-    def __init__(self, uParser, window_size=30, stride=3,viewer=None):
+    def __init__(self, uParser, window_size=30, stride=2,viewer=None):
         QThread.__init__(self)
         self.parser = uParser
-        self.pred_queue = deque(maxlen=5)  # Ambil 5 prediksi terakhir (bisa diubah)
         self.queue = Queue()  # 🧵 buat antrian
+        self.last_candidate_label = None
+        self.candidate_count = 0
+        self.current_label_idx = None
+        self.pred_queue = deque(maxlen=5)  # history prediksi
+        self.conf_queue = deque(maxlen=5)  # history confidence
         self.predThread = Thread(target=self.prediction_thread_func)
         self.predThread.daemon = True
         self.predThread.start()
         self.model = load_model("andrikun_fixed.h5", compile=False)
-        self.class_names = ["Berdiri", "Duduk", "Jalan", "Jatuh"]
+        self.class_names = ["Berdiri", "Duduk", "jalan", "Jatuh"]
+        self.init_prediction_logger()
+        self.prediction_log_buffer = []
 
         # 🔥 Tambahkan ini untuk logika stabilisasi jatuh
         self.last_label_name = None
         self.last_jatuh_timestamp = None
         self.doppler_change_threshold = 0.5  # Threshold mean doppler untuk "bergerak" lagi
         self.jatuh_hold_time = 3  # Detik mempertahankan status jatuh
-
-        # self.x, self.y, self.z = 10, 32, 32
-        # self.x_min, self.x_max = -1.5, 1.5
-        # self.y_min, self.y_max = 0, 4
-        # self.z_min, self.z_max = 0, 2
-
-        # self.x_res = (self.x_max - self.x_min) / self.x
-        # self.y_res = (self.y_max - self.y_min) / self.y
-        # self.z_res = (self.z_max - self.z_min) / self.z
         self.frameBuffer = deque(maxlen=window_size)
         self.window_size = window_size
         self.stride = stride
@@ -84,6 +81,10 @@ class parseUartThread(QThread):
         os.makedirs(self.outputDir, exist_ok=True)
 
     def run(self):
+        if not hasattr(self, 'logger_initialized'):
+            self.init_prediction_logger()
+            self.logger_initialized = True
+            
         if self.parser.parserType == "SingleCOMPort":
             outputDict = self.parser.readAndParseUartSingleCOMPort()
         else:
@@ -94,8 +95,7 @@ class parseUartThread(QThread):
                 'timestamp': time.time() * 1000
             }
         self.fin.emit(outputDict)
-
-
+        # print("Emit")
         # Tambah ke buffer (deque otomatis geser kalau penuh)
         self.frameBuffer.append(frameJSON)
 
@@ -222,93 +222,197 @@ class parseUartThread(QThread):
         heatmap_rgb = (heatmap_rgb - heatmap_rgb.min()) / (heatmap_rgb.max() - heatmap_rgb.min() + 1e-8)
         return dr, dt, rt, heatmap_rgb
         # return heatmap_rgb
-    
-    # def debug_visualize_heatmap(self, heatmap_rgb, start_ts):
-    #     import matplotlib.pyplot as plt
-    #     os.makedirs("debug", exist_ok=True)
-    #     plt.imsave(f"debug/heatmap_window_{start_ts}.png", heatmap_rgb)
-    #     print(f"✅ Heatmap disimpan ke debug/heatmap_window_{start_ts}.png")
 
-    # def extract_features(self, frameJSON):
-    #     pc = frameJSON['frameData']['pointCloud']
-    #     timestamp = frameJSON['timestamp']
-        
-    #     x = pc[:, 0]
-    #     y = pc[:, 1]
-    #     z = pc[:, 2]
-    #     doppler = pc[:, 3]
-    #     snr = pc[:, 4]
+    def init_prediction_logger(self):
+        import csv, os
+        from datetime import datetime
+        os.makedirs("logs", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.pred_log_path = f"logs/prediction_log_{timestamp}.csv"
+        self.pred_log_file = open(self.pred_log_path, mode="w", newline="")
+        self.pred_csv_writer = csv.writer(self.pred_log_file)
 
-    #     # Normalisasi SNR (log-scale)
-    #     snr = np.clip(snr, 4.68, 2621.36)
-    #     snr = np.log1p(snr)
+        # Tulis header
+        self.pred_csv_writer.writerow(['timestamp'] + self.class_names)
 
-    #     return np.stack([x, y, z, doppler, snr], axis=1)
 
-    # def voxelize(self, x, y, z, doppler, snr):
-    #     valid_mask = ~(np.isnan(x) | np.isnan(y) | np.isnan(z))
-    #     x, y, z, doppler, snr = x[valid_mask], y[valid_mask], z[valid_mask], doppler[valid_mask], snr[valid_mask]
+    # def prediction_thread_func(self):
+    #     while True:
+    #         heatmap_rgb, doppler_vals = self.queue.get()  # 🔥 Terima heatmap dan doppler
+    #         if heatmap_rgb is None:
+    #             break
 
-    #     if len(x) == 0:
-    #         return np.zeros([self.x, self.y, self.z, 3])
+    #         # 🔥 Start timer
+    #         input_tensor = np.expand_dims(heatmap_rgb, axis=0)
+    #         start_time = time.time()
+    #         pred = self.model.predict(input_tensor, verbose=0)
+    #         end_time = time.time()
+    #         inference_time = end_time - start_time
 
-    #     pixel = np.zeros([self.x, self.y, self.z, 3])
-    #     pixel_counts = np.zeros([self.x, self.y, self.z])
+    #         # 🔥 Prediksi awal
+    #         label_idx = np.argmax(pred)
+    #         self.pred_queue.append(label_idx)
 
-    #     for i in range(len(x)):
-    #         try:
-    #             x_idx = int((x[i] - self.x_min) / self.x_res)
-    #             y_idx = int((y[i] - self.y_min) / self.y_res)
-    #             z_idx = int((z[i] - self.z_min) / self.z_res)
+    #         # 🔥 Majority voting
+    #         # counts = Counter(self.pred_queue)
+    #         # majority_label_idx = counts.most_common(1)[0][0]
 
-    #             if 0 <= x_idx < self.x and 0 <= y_idx < self.y and 0 <= z_idx < self.z:
-    #                 pixel[x_idx, y_idx, z_idx, 0] += 1
-    #                 pixel[x_idx, y_idx, z_idx, 1] += doppler[i]
-    #                 pixel[x_idx, y_idx, z_idx, 2] += snr[i]
-    #                 pixel_counts[x_idx, y_idx, z_idx] += 1
-    #         except Exception:
-    #             continue
+    #         # label_name = self.class_names[majority_label_idx]
+    #         # confidence = pred[0][majority_label_idx]
+            
+    #         # 🔥 Ambil hasil prediksi
+    #         label_idx = np.argmax(pred)
+    #         label_name = self.class_names[label_idx]
+    #         confidence = pred[0][label_idx]
+    #         if hasattr(self, 'prediction_log_buffer'):
+    #             now = time.time()
+    #             row = [now] + [float(prob) for prob in pred[0]]
+    #             self.prediction_log_buffer.append(row)
+    #         # label_idx = np.argmax(pred)
+    #         # confidence = np.max(pred)
+    #         # label_idx, label_name, confidence = self.update_prediction(label_idx, confidence, doppler_vals)
 
-    #     nonzero_idx = pixel_counts > 0
-    #     pixel[nonzero_idx, 1] /= pixel_counts[nonzero_idx]
-    #     pixel[nonzero_idx, 2] /= pixel_counts[nonzero_idx]
 
-    #     return pixel
+    #         # print(f"📢 Majority Voting Aktivitas: {label_name} (label={majority_label_idx}, conf={confidence:.2f}, infer={inference_time:.4f}s)")
 
+    #         # ✅ Update label di GUI
+    #         if hasattr(self, 'guiWindow'):
+    #             self.guiWindow.predictionLabel.setText(
+    #                 f"Aktivitas: {label_name} ({confidence * 100:.1f}%) | {inference_time:.4f}s"
+    #             )
+    # def prediction_thread_func(self):
+    #     # Inisialisasi jika belum ada
+    #     if not hasattr(self, 'last_candidate_label'):
+    #         self.last_candidate_label = None
+    #         self.candidate_count = 0
+    #         self.current_label_idx = None
+
+    #     # Threshold berdasarkan transisi (jumlah berturut-turut dibutuhkan)
+    #     self.transition_thresholds = {
+    #         ("duduk", "jalan"): 15,
+    #         ("jatuh", "jalan"): 15,
+    #         ("berdiri", "jalan"): 10,
+    #         ("berdiri", "duduk"): 10,
+    #         ("berdiri", "jatuh"): 10,
+    #         ("jalan", "berdiri"): 10,
+    #         ("duduk", "berdiri"): 10,
+    #         ("jatuh", "berdiri"): 10,
+    #         # default jika tidak dispesifikkan
+    #     }
+
+    #     while True:
+    #         heatmap_rgb, doppler_vals = self.queue.get()
+    #         if heatmap_rgb is None:
+    #             break
+
+    #         input_tensor = np.expand_dims(heatmap_rgb, axis=0)
+    #         start_time = time.time()
+    #         pred = self.model.predict(input_tensor, verbose=0)
+    #         end_time = time.time()
+    #         inference_time = end_time - start_time
+
+    #         label_idx = np.argmax(pred)
+    #         confidence = pred[0][label_idx]
+
+    #         # Simpan ke history
+    #         self.pred_queue.append(label_idx)
+    #         self.conf_queue.append(confidence)
+
+    #         label_name_candidate = self.class_names[label_idx].lower()
+    #         prev_label_name = self.class_names[self.current_label_idx].lower() if self.current_label_idx is not None else None
+
+    #         # Ambil threshold jumlah kemunculan berturut-turut berdasarkan transisi
+    #         transition_key = (prev_label_name, label_name_candidate)
+    #         threshold = self.transition_thresholds.get(transition_key, 10)
+
+    #         # Tentukan minimum confidence
+    #         min_conf = 0.99 if label_name_candidate == "Jalan" else 0.99
+
+    #         # Logika stabilisasi prediksi
+    #         if confidence >= min_conf:
+    #             if label_idx == self.last_candidate_label:
+    #                 self.candidate_count += 1
+    #             else:
+    #                 self.last_candidate_label = label_idx
+    #                 self.candidate_count = 1
+
+    #             if self.candidate_count >= threshold:
+    #                 self.current_label_idx = label_idx
+    #         else:
+    #             self.last_candidate_label = None
+    #             self.candidate_count = 0
+
+    #         # Ambil label final
+    #         final_label_idx = self.current_label_idx if self.current_label_idx is not None else label_idx
+    #         label_name = self.class_names[final_label_idx]
+    #         final_confidence = pred[0][final_label_idx]
+
+    #         # Logging jika buffer tersedia
+    #         if hasattr(self, 'prediction_log_buffer'):
+    #             now = time.time()
+    #             row = [now] + [float(prob) for prob in pred[0]]
+    #             self.prediction_log_buffer.append(row)
+
+    #         # Tampilkan di GUI jika ada
+    #         if hasattr(self, 'guiWindow'):
+    #             self.guiWindow.predictionLabel.setText(
+    #                 f"Aktivitas: {label_name} ({final_confidence * 100:.1f}%) | {inference_time:.4f}s"
+    #             )
     def prediction_thread_func(self):
+        # Inisialisasi jika belum ada
+        if not hasattr(self, 'last_candidate_label'):
+            self.last_candidate_label = None
+            self.candidate_count = 0
+            self.current_label_idx = None
+
         while True:
-            heatmap_rgb, doppler_vals = self.queue.get()  # 🔥 Terima heatmap dan doppler
+            heatmap_rgb, doppler_vals = self.queue.get()
             if heatmap_rgb is None:
                 break
 
-            # 🔥 Start timer
             input_tensor = np.expand_dims(heatmap_rgb, axis=0)
             start_time = time.time()
             pred = self.model.predict(input_tensor, verbose=0)
             end_time = time.time()
             inference_time = end_time - start_time
 
-            # 🔥 Prediksi awal
             label_idx = np.argmax(pred)
-            self.pred_queue.append(label_idx)
+            confidence = pred[0][label_idx]
 
-            # 🔥 Majority voting
-            counts = Counter(self.pred_queue)
-            majority_label_idx = counts.most_common(1)[0][0]
+            label_name_candidate = self.class_names[label_idx].lower()
 
-            label_name = self.class_names[majority_label_idx]
-            confidence = pred[0][majority_label_idx]
-            # label_idx = np.argmax(pred)
-            # confidence = np.max(pred)
-            # label_idx, label_name, confidence = self.update_prediction(label_idx, confidence, doppler_vals)
+            # Tentukan threshold kemunculan berdasarkan label
+            threshold = 10 if label_name_candidate == "jalan" else 5
 
+            # Cek confidence >= 95% dan label sama berturut-turut
+            if confidence >= 0.95:
+                if label_idx == self.last_candidate_label:
+                    self.candidate_count += 1
+                else:
+                    self.last_candidate_label = label_idx
+                    self.candidate_count = 1
 
-            # print(f"📢 Majority Voting Aktivitas: {label_name} (label={majority_label_idx}, conf={confidence:.2f}, infer={inference_time:.4f}s)")
+                if self.candidate_count >= threshold:
+                    self.current_label_idx = label_idx
+            else:
+                self.last_candidate_label = None
+                self.candidate_count = 0
 
-            # ✅ Update label di GUI
+            # Ambil label final
+            final_label_idx = self.current_label_idx if self.current_label_idx is not None else label_idx
+            label_name = self.class_names[final_label_idx]
+            final_confidence = pred[0][final_label_idx]
+
+            # Logging jika buffer tersedia
+            if hasattr(self, 'prediction_log_buffer'):
+                now = time.time()
+                row = [now] + [float(prob) for prob in pred[0]]
+                self.prediction_log_buffer.append(row)
+
+            # Tampilkan hasil di GUI jika ada
             if hasattr(self, 'guiWindow'):
                 self.guiWindow.predictionLabel.setText(
-                    f"Aktivitas: {label_name} ({confidence * 100:.1f}%) | {inference_time:.4f}s"
+                    f"Aktivitas: {label_name} ({final_confidence * 100:.1f}%) | {inference_time:.4f}s"
                 )
 
     def update_prediction(self, label_idx, confidence, doppler_values):
@@ -331,12 +435,24 @@ class parseUartThread(QThread):
                 self.last_confidence = confidence
 
             return self.last_label_idx, self.last_label_name, self.last_confidence
-    
-    def stop(self):
-        self.terminate()
+    def save_prediction_log_to_csv(self):
+        if not hasattr(self, 'prediction_log_buffer'):
+            return
+        import csv
+        with open(self.pred_log_path, mode="w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(['timestamp'] + self.class_names)
+            writer.writerows(self.prediction_log_buffer)
 
     def stop(self):
+        if hasattr(self, 'prediction_log_buffer'):
+            self.save_prediction_log_to_csv()  # 🔥 Simpan buffer ke CSV
+
+        if hasattr(self, 'pred_log_file'):
+            self.pred_log_file.close()
+
         self.terminate()
+
 
 
 class sendCommandThread(QThread):

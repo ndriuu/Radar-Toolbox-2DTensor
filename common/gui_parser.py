@@ -62,7 +62,7 @@ class UARTParser():
     # DoubleCOMPort means this function refers to the xWRx843 family of devices.
     #thread 1
     def readAndParseUartDoubleCOMPort(self):
-
+        # print("Awal")
         self.fail = 0
         if (self.replay):
             return self.replayHist()
@@ -72,8 +72,11 @@ class UARTParser():
         # Find magic word, and therefore the start of the frame
         index = 0
         magicByte = self.dataCom.read(1)
+        # print ("Debug MagicByte")
+
         frameData = bytearray(b'')
         while (1):
+            # print ("Debug While")
             # If the device doesn't transmit any data, the COMPort read function will eventually timeout
             # Which means magicByte will hold no data, and the call to magicByte[0] will produce an error
             # This check ensures we can give a meaningful error
@@ -117,6 +120,7 @@ class UARTParser():
         frameData += bytearray(self.dataCom.read(frameLength))
 
         # frameData now contains an entire frame, send it to parser
+        # print(f"Parser{angka}")
         if (self.parserType == "DoubleCOMPort"):
             # print(frameData)
             outputDict = parseStandardFrame(frameData)
@@ -165,7 +169,18 @@ class UARTParser():
                     json_object = json.dumps(data, indent=4)
                     fp.write(json_object)
                     # self.frames = [] uncomment to put data into one file at a time in 100 frame chunks
-
+            # 🚨 Track frame number & deteksi skip
+            current_frame = outputDict.get('frameNum')
+            if current_frame is not None:
+                if not hasattr(self, 'last_frameNum'):
+                    self.last_frameNum = current_frame
+                    self.frame_skip_count = 0  # Optional: hitung total skip
+                else:
+                    expected_frame = self.last_frameNum + 1
+                    if current_frame != expected_frame:
+                        log.warning(f"[FRAME SKIP] Expected {expected_frame}, got {current_frame}")
+                        self.frame_skip_count += 1  # Optional
+                    self.last_frameNum = current_frame
         return outputDict
 
     # This function is identical to the readAndParseUartDoubleCOMPort function, but it's modified to work for SingleCOMPort devices in the xWRLx432 family

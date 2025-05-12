@@ -75,7 +75,6 @@ class Window(QMainWindow):
 
         self.shortcut = QShortcut(QKeySequence("Ctrl+W"), self)
         self.shortcut.activated.connect(self.close)
-
         self.demoTabs = QTabWidget()
         self.gridLayout = QGridLayout()
 
@@ -189,33 +188,6 @@ class Window(QMainWindow):
 
         self.showMaximized()
 
-        # # Label judul
-        # self.heatmapTitle = QLabel("Visualisasi 2D Tensor")
-        # self.heatmapTitle.setAlignment(Qt.AlignCenter)
-        # self.heatmapTitle.setStyleSheet("font-weight: bold; font-size: 25px;")
-
-        # # Label heatmap gambar
-        # self.heatmapLabel = QLabel()
-        # self.heatmapLabel.setAlignment(Qt.AlignCenter)
-        # self.heatmapLabel.setStyleSheet("border: 1px solid gray; background-color: black;")
-        # self.heatmapLabel.setScaledContents(True)
-
-        # # Buat layout vertikal
-        # self.heatmapLayout = QVBoxLayout()
-        # self.heatmapLayout.addWidget(self.heatmapTitle)
-        # self.heatmapLayout.addWidget(self.heatmapLabel)
-
-        # # Bungkus dengan QWidget dan masukkan ke grid layout utama
-        # self.heatmapContainer = QWidget()
-        # self.heatmapContainer.setLayout(self.heatmapLayout)
-        # self.gridLayout.addWidget(self.heatmapContainer, 0, 2, 5, 1)
-
-
-        # self.gridLayout.setColumnStretch(0, 1)  # kiri (COM/config)
-        # self.gridLayout.setColumnStretch(1, 4)  # tengah (3D tabs)
-        # self.gridLayout.setColumnStretch(2, 3)  # kanan (heatmap label)
-
-
         self.core.sl.setMinimum(0)
         self.core.sl.setMaximum(30)
         self.core.sl.setValue(20)
@@ -242,11 +214,6 @@ class Window(QMainWindow):
         self.setCentralWidget(self.central)
 
         self.showMaximized()
-
-    # def setHeatmapViewer(self, viewer):
-    #     self.heatmapViewer = viewer
-    #     self.core.heatmapViewer = viewer  # ✅ tambahkan ini
-
 
     def initMenuBar(self):
         menuBar = self.menuBar()
@@ -489,12 +456,6 @@ class Window(QMainWindow):
         elif (self.core.replay and self.core.playing is True):
             self.start.setText("Replay")
         self.core.startApp()
-    # from PySide2.QtGui import QImage, QPixmap
-
-    # def updateHeatmapGUI(self, heatmap_rgb):
-    #     pixmap = self.heatmap_to_pixmap(heatmap_rgb)
-    #     self.heatmapLabel.setPixmap(pixmap)
-    # import cv2
 
     def updateHeatmapGUI(self, dr, dt, rt):
         target_size = self.heatmap_target_size
@@ -506,15 +467,6 @@ class Window(QMainWindow):
         self.labelDT.setPixmap(self.heatmap_to_pixmap(dt))
         self.labelRT.setPixmap(self.heatmap_to_pixmap(rt))
 
-
-
-
-    # def heatmap_to_pixmap(self, heatmap_rgb):
-    #     img_uint8 = (heatmap_rgb * 255).astype(np.uint8)
-    #     h, w, ch = img_uint8.shape
-    #     bytesPerLine = ch * w
-    #     qimg = QImage(img_uint8.data, w, h, bytesPerLine, QImage.Format_RGB888)
-    #     return QPixmap.fromImage(qimg)
     def heatmap_to_pixmap(self, heatmap):
         # Jika hanya 2 dimensi (grayscale), ubah jadi RGB pakai colormap
         if len(heatmap.shape) == 2:
@@ -528,44 +480,6 @@ class Window(QMainWindow):
         bytesPerLine = ch * w
         qimg = QImage(heatmap_rgb.data, w, h, bytesPerLine, QImage.Format_RGB888)
         return QPixmap.fromImage(qimg)
-    
-    # def updateVoxelGUI(self, voxel_data):
-    #     print("🧱 updateVoxelGUI dipanggil... shape:", voxel_data.shape)
-
-    #     import matplotlib.pyplot as plt
-    #     from matplotlib import cm
-    #     from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-    #     from mpl_toolkits.mplot3d import Axes3D
-    #     from io import BytesIO
-    #     from PySide2.QtGui import QImage, QPixmap
-    #     import numpy as np
-
-    #     voxel_values = voxel_data[..., 0]
-    #     filled = voxel_values > 0
-    #     if np.count_nonzero(filled) == 0:
-    #         print("⚠️ Voxel kosong")
-    #         return
-
-    #     # Normalisasi warna
-    #     norm = plt.Normalize(vmin=voxel_values.min(), vmax=voxel_values.max())
-    #     colors = cm.viridis(norm(voxel_values))
-
-    #     # Render 3D ke image
-    #     fig = plt.figure(figsize=(4, 3))
-    #     ax = fig.add_subplot(111, projection='3d')
-    #     ax.voxels(filled, facecolors=colors, edgecolor='k')
-    #     ax.view_init(elev=20, azim=60)  # sudut pandang
-    #     ax.set_axis_off()
-
-    #     canvas = FigureCanvas(fig)
-    #     buf = BytesIO()
-    #     canvas.print_png(buf)
-    #     plt.close(fig)
-    #     buf.seek(0)
-
-    #     qimg = QImage.fromData(buf.getvalue())
-    #     pixmap = QPixmap.fromImage(qimg).scaled(self.voxelLabel.size(), Qt.KeepAspectRatio)
-    #     self.voxelLabel.setPixmap(pixmap)
 
 
 class Core:
@@ -623,7 +537,7 @@ class Core:
             self.changeDemo(demoList, deviceList, gridLayout, demoTabs)
 
         if recordState:
-            recordAction.setChecked(True)
+            recordAction.setChecked(False)
 
     def getDemoList(self):
         return DEVICE_DEMO_DICT[self.device]["demos"]

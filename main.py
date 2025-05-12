@@ -17,9 +17,6 @@ from gui_core import Window
 # Demo config
 from common.demo_defines import *
 
-# Viewer heatmap
-# from viewer import HeatmapViewer  # ✅ Tambahkan ini
-
 # Logging
 logging.basicConfig(
     format='%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
@@ -41,13 +38,6 @@ if __name__ == '__main__':
     screen = app.primaryScreen()
     size = screen.size()
 
-    # 🔥 Inisialisasi HeatmapViewer
-    # viewer = HeatmapViewer()
-
-    # 🔧 Buat window dan kirim viewer
     main = Window(size=size, title="Industrial Visualizer")
-    # main.setHeatmapViewer(viewer)  # ✅ Kirim viewer ke Window agar bisa diteruskan
-
-    # Tampilkan GUI
     main.show()
     sys.exit(app.exec_())

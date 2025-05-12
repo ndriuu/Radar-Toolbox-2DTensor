@@ -68,6 +68,7 @@ unusedTLVs = [
 ]
 
 def parseStandardFrame(frameData):
+    # MACET
     # Constants for parsing frame header
     headerStruct = 'Q8I'
     frameHeaderLen = struct.calcsize(headerStruct)
