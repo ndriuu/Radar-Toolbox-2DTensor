@@ -1,4 +1,5 @@
 # 📡 Radar Toolbox 2D Tensor
+![Example Output](img/pointToHeatmap.png)
 
 A Python-based toolbox for processing, analyzing, and visualizing 2D tensor radar data. Useful for radar research, signal processing, and feature extraction workflows.
 
@@ -57,53 +58,58 @@ python main.py
 ---
 
 ## 🗺️ Mapping Explanation
-<div style="background-color: white; padding: 10px; display: inline-block;">
-  <img src="img/mapVisualization.png" alt="Example Output" width="500"/>
-</div>
+![Example Output](img/Stack2DTensorResult.png)
 
-_This section is reserved for describing how 2D radar tensors are mapped or transformed (e.g., Range-Doppler maps, heatmaps, occupancy grids)._ 
+This section describes how radar data is mapped into 2D tensor representations used for visualization and classification.
 
-- Describe coordinate systems, projection methods, or custom mapping logic.
-- Example: Mapping distance and velocity information into a 2D grid representation.
-
+- The raw radar data includes spatial and temporal parameters such as range, Doppler, and timestamp.
+- Each cell in the tensor holds an intensity or feature value corresponding to signal strength or reflection.
+- A temporal stack of these 2D tensors (accumulated over timestamps) can be constructed to capture motion patterns and temporal features for learning tasks.
 ---
 
 ## 📊 Dataset Structure
-
-- File: `andrikun_fixed.h5`
-- Format: HDF5 with multidimensional radar frames
-- Suggested description:
-  - Shape: `(num_frames, height, width, channels)`
-  - Each frame represents a 2D radar tensor (e.g., Range vs Doppler)
-
-You can add a sample schema, statistics, or sample slices here.
-
+- Data Content:
+  - Each entry includes multiple radar-related features:
+    - **x, y, z** spatial coordinates
+    - **doppler** (velocity information)
+    - **range** (distance from sensor)
+    - **azimuth** and **elevation** angles
+    - **timestamp** (time of capture for each frame)
+  - From this data, the system primarily utilizes **doppler**, **range**, and **timestamp** features to generate 2D tensor images for classification.
+  - This rich set of features enables detailed spatial-temporal representation of the scene.
 ---
 
 ## 🧠 Model Architecture (if applicable)
+![Example Output](img/structureModel.png)
 
-_Describe any models used for classification, detection, or regression tasks._
+_The classification model used in this toolbox is a Convolutional Neural Network (CNN).
 
-- Model type (e.g., CNN, LSTM, PointNet)
-- Input shape and preprocessing
-- Output interpretation (e.g., predicted class, score map)
+- **Model Type**: CNN
+- **Input**: 2D radar tensor image (e.g., range-Doppler map) with dimensions standardized during preprocessing.
+- **Preprocessing**: Normalization of pixel intensity values, resizing if needed, and optional noise filtering.
+- **Output**: Predicted class label (e.g., "walking", "standing", "sitting") with confidence score.
+
+![Example Output](img/trainingResult.png)
+
+The model has demonstrated excellent performance on the given dataset, achieving an accuracy of approximately **99%**, indicating high reliability in distinguishing human movement patterns from radar data.
 
 ---
 
 ## 📈 Results
+![Example Output](img/result.png)
+_The output of this toolbox is in the form of 2D radar tensor images along with their associated classification results.
 
-_Add accuracy metrics, confusion matrix, or visualizations of predictions._
-
-- Detection/classification performance (if any)
-- Plots from `img/` that demonstrate success/failure
-- Any evaluation on real vs simulated data
+- Each processed radar frame is visualized as a 2D image (e.g., range-Doppler map).
+- A trained model (if used) performs classification on each frame (e.g., walking, sitting, etc.).
+- The visualization may include overlays or annotations to indicate predicted classes.
+- Screenshots of these results are saved in the `img/` folder for documentation and verification.
 
 ---
 
 ## 🚀 Use Cases
 
 - Radar Signal Processing
-- ML Preprocessing for Point Cloud / Tensor Radar Data
+- DL Preprocessing for Point Cloud / Tensor Radar Data
 - Academic Research on Automotive / FMCW Radar
 - Visualization of Radar Heatmaps or Doppler Grids
 
