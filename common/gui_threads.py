@@ -56,8 +56,8 @@ class parseUartThread(QThread):
         self.last_candidate_label = None
         self.candidate_count = 0
         self.current_label_idx = None
-        self.pred_queue = deque(maxlen=5)  # history prediksi
-        self.conf_queue = deque(maxlen=5)  # history confidence
+        # self.pred_queue = deque(maxlen=5)  # history prediksi
+        # self.conf_queue = deque(maxlen=5)  # history confidence
         self.predThread = Thread(target=self.prediction_thread_func)
         self.predThread.daemon = True
         self.predThread.start()
@@ -67,10 +67,10 @@ class parseUartThread(QThread):
         self.prediction_log_buffer = []
 
         # 🔥 Tambahkan ini untuk logika stabilisasi jatuh
-        self.last_label_name = None
-        self.last_jatuh_timestamp = None
-        self.doppler_change_threshold = 0.5  # Threshold mean doppler untuk "bergerak" lagi
-        self.jatuh_hold_time = 3  # Detik mempertahankan status jatuh
+        # self.last_label_name = None
+        # self.last_jatuh_timestamp = None
+        # self.doppler_change_threshold = 0.5  # Threshold mean doppler untuk "bergerak" lagi
+        # self.jatuh_hold_time = 3  # Detik mempertahankan status jatuh
         self.frameBuffer = deque(maxlen=window_size)
         self.window_size = window_size
         self.stride = stride
@@ -415,26 +415,26 @@ class parseUartThread(QThread):
                     f"Aktivitas: {label_name} ({final_confidence * 100:.1f}%) | {inference_time:.4f}s"
                 )
 
-    def update_prediction(self, label_idx, confidence, doppler_values):
-            if self.last_label_name == "Jatuh":
-                mean_doppler = np.mean(np.abs(doppler_values))
-                if mean_doppler > self.doppler_change_threshold:
-                    # Aktivitas baru valid, update
-                    self.last_label_idx = label_idx
-                    self.last_label_name = self.class_names[label_idx]
-                    self.last_confidence = confidence
-                else:
-                    # Tetap di 'jatuh'
-                    label_idx = self.last_label_idx
-                    label_name = self.last_label_name
-                    confidence = self.last_confidence
-            else:
-                # Bukan jatuh sebelumnya, update biasa
-                self.last_label_idx = label_idx
-                self.last_label_name = self.class_names[label_idx]
-                self.last_confidence = confidence
+    # def update_prediction(self, label_idx, confidence, doppler_values):
+    #         if self.last_label_name == "Jatuh":
+    #             mean_doppler = np.mean(np.abs(doppler_values))
+    #             if mean_doppler > self.doppler_change_threshold:
+    #                 # Aktivitas baru valid, update
+    #                 self.last_label_idx = label_idx
+    #                 self.last_label_name = self.class_names[label_idx]
+    #                 self.last_confidence = confidence
+    #             else:
+    #                 # Tetap di 'jatuh'
+    #                 label_idx = self.last_label_idx
+    #                 label_name = self.last_label_name
+    #                 confidence = self.last_confidence
+    #         else:
+    #             # Bukan jatuh sebelumnya, update biasa
+    #             self.last_label_idx = label_idx
+    #             self.last_label_name = self.class_names[label_idx]
+    #             self.last_confidence = confidence
 
-            return self.last_label_idx, self.last_label_name, self.last_confidence
+    #         return self.last_label_idx, self.last_label_name, self.last_confidence
     def save_prediction_log_to_csv(self):
         if not hasattr(self, 'prediction_log_buffer'):
             return
